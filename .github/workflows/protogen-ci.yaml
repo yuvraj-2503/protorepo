@@ -1,0 +1,121 @@
+name: Proto CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  proto:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Buf
+        run: |
+          curl -sSL https://github.com/bufbuild/buf/releases/latest/download/buf-Linux-x86_64 -o /usr/local/bin/buf
+          chmod +x /usr/local/bin/buf
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Install protoc plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+      ###########################################################
+      # Detect if this commit is a bot publish commit
+      ###########################################################
+
+      - name: Detect Publish Commit
+        id: publishcheck
+        run: |
+          if git log -1 --pretty=%B | grep -q "Publish:" ; then
+            echo "is_publish=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_publish=false" >> $GITHUB_OUTPUT
+          fi
+
+      ###########################################################
+      # Lint Protos
+      ###########################################################
+
+      - name: Proto Lint
+        run: buf lint
+
+      ###########################################################
+      # Breaking change check (only on PR)
+      ###########################################################
+
+      - name: Breaking Change Check
+        if: github.event_name == 'pull_request'
+        run: buf breaking --against '.git#branch=main'
+
+      ###########################################################
+      # Validate generation (no publishing)
+      ###########################################################
+
+      - name: Validate Build
+        if: steps.publishcheck.outputs.is_publish == 'false'
+        run: |
+          rm -rf gen/go
+          buf generate
+
+      ###########################################################
+      # Determine if publish should run
+      ###########################################################
+
+      - name: Check Publish Condition
+        id: publishcondition
+        run: |
+          SHOULD_PUBLISH=false
+
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            SHOULD_PUBLISH=true
+          fi
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            LABELS=$(jq -r '.pull_request.labels[].name' <<< '${{ toJson(github.event) }}')
+
+            if echo "$LABELS" | grep -q "publish-go"; then
+              SHOULD_PUBLISH=true
+            fi
+          fi
+
+          echo "publish=$SHOULD_PUBLISH" >> $GITHUB_OUTPUT
+
+      ###########################################################
+      # Generate Go (only when needed)
+      ###########################################################
+
+      - name: Generate Go Code
+        if: steps.publishcondition.outputs.publish == 'true' && steps.publishcheck.outputs.is_publish == 'false'
+        run: |
+          rm -rf gen/go
+          buf generate
+
+      ###########################################################
+      # Commit generated code
+      ###########################################################
+
+      - name: Commit Generated Files
+        if: steps.publishcondition.outputs.publish == 'true' && steps.publishcheck.outputs.is_publish == 'false'
+        run: |
+          git config user.name "proto-bot"
+          git config user.email "proto-bot@users.noreply.github.com"
+
+          git add gen/go
+          git commit -m "Publish: generated go proto files" || echo "Nothing to commit"
+
+          git push
