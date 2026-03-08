@@ -10,6 +10,7 @@ on:
 
 jobs:
   proto:
+    name: proto build
     runs-on: ubuntu-latest
 
     steps:
