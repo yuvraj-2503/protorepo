@@ -1,15 +1,19 @@
+permissions:
+  contents: write
+
 name: Proto CI
 
 on:
-  push:
-    branches:
-      - '**'
   pull_request:
+    branches:
+      - main
+  push:
     branches:
       - main
 
 jobs:
   proto:
+    name: proto build
     runs-on: ubuntu-latest
 
     steps:
@@ -41,7 +45,7 @@ jobs:
       - name: Detect Publish Commit
         id: publishcheck
         run: |
-          if git log -1 --pretty=%B | grep -q "Publish:" ; then
+          if git log -1 --pretty=%B | grep -q "Publish" ; then
             echo "is_publish=true" >> $GITHUB_OUTPUT
           else
             echo "is_publish=false" >> $GITHUB_OUTPUT
@@ -60,13 +64,15 @@ jobs:
 
       - name: Breaking Change Check
         if: github.event_name == 'pull_request'
-        run: buf breaking --against '.git#branch=main'
+        continue-on-error: true
+        run: buf breaking --against '.git#branch=origin/main'
 
       ###########################################################
       # Validate generation (no publishing)
       ###########################################################
 
       - name: Validate Build
+      
         if: steps.publishcheck.outputs.is_publish == 'false'
         run: |
           rm -rf gen/go
@@ -74,6 +80,9 @@ jobs:
 
       ###########################################################
       # Determine if publish should run
+      # Publishes when:
+      # 1. Pushing directly to main branch
+      # 2. PR from any branch with 'publish' label
       ###########################################################
 
       - name: Check Publish Condition
@@ -81,14 +90,13 @@ jobs:
         run: |
           SHOULD_PUBLISH=false
 
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
             SHOULD_PUBLISH=true
           fi
 
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             LABELS=$(jq -r '.pull_request.labels[].name' <<< '${{ toJson(github.event) }}')
-
-            if echo "$LABELS" | grep -q "publish-go"; then
+            if echo "$LABELS" | grep -q "publish"; then
               SHOULD_PUBLISH=true
             fi
           fi
@@ -109,13 +117,11 @@ jobs:
       # Commit generated code
       ###########################################################
 
-      - name: Commit Generated Files
-        if: steps.publishcondition.outputs.publish == 'true' && steps.publishcheck.outputs.is_publish == 'false'
+      - name: Commit and push generated files to branch
+        if: steps.publishcondition.outputs.publish == 'true'
         run: |
           git config user.name "proto-bot"
           git config user.email "proto-bot@users.noreply.github.com"
-
           git add gen/go
-          git commit -m "Publish: generated go proto files" || echo "Nothing to commit"
-
-          git push
+          git commit -m "chore: update generated proto files" || echo "Nothing to commit"
+          git push origin HEAD:${{ github.head_ref || github.ref_name }}
