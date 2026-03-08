@@ -68,6 +68,8 @@ jobs:
       ###########################################################
 
       - name: Validate Build
+      
+        if: steps.publishcheck.outputs.is_publish == 'false'
         run: |
           rm -rf gen/go
           buf generate
