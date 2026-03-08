@@ -60,7 +60,7 @@ jobs:
 
       - name: Breaking Change Check
         if: github.event_name == 'pull_request'
-        run: buf breaking --against '.git#branch=main'
+        run: buf breaking --against '.git#branch=origin/main'
 
       ###########################################################
       # Validate generation (no publishing)
