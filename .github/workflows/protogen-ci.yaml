@@ -90,13 +90,12 @@ jobs:
         run: |
           SHOULD_PUBLISH=false
 
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
             SHOULD_PUBLISH=true
           fi
 
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             LABELS=$(jq -r '.pull_request.labels[].name' <<< '${{ toJson(github.event) }}')
-
             if echo "$LABELS" | grep -q "publish"; then
               SHOULD_PUBLISH=true
             fi
@@ -118,11 +117,11 @@ jobs:
       # Commit generated code
       ###########################################################
 
-      - name: Commit and push generated files
-        if: github.event_name == 'pull_request' || github.event_name == 'push'
+      - name: Commit and push generated files to branch
+        if: steps.publishcondition.outputs.publish == 'true'
         run: |
           git config user.name "proto-bot"
           git config user.email "proto-bot@users.noreply.github.com"
           git add gen/go
-          git commit -m "Publish" || echo "Nothing to commit"
+          git commit -m "chore: update generated proto files" || echo "Nothing to commit"
           git push origin HEAD:${{ github.head_ref || github.ref_name }}
