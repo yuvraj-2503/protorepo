@@ -45,7 +45,7 @@ jobs:
       - name: Detect Publish Commit
         id: publishcheck
         run: |
-          if git log -1 --pretty=%B | grep -q "publish" ; then
+          if git log -1 --pretty=%B | grep -qi "publish" ; then
             echo "is_publish=true" >> $GITHUB_OUTPUT
           else
             echo "is_publish=false" >> $GITHUB_OUTPUT
@@ -121,9 +121,16 @@ jobs:
 
       - name: Commit and push generated files to branch
         if: steps.publishcondition.outputs.publish == 'true'
+        env:
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
         run: |
+          # Only allow safe branch names (alphanumeric, -, _, /)
+          if [[ ! "$BRANCH_NAME" =~ ^[A-Za-z0-9._\/-]+$ ]]; then
+            echo "Invalid branch name: $BRANCH_NAME" >&2
+            exit 1
+          fi
           git config user.name "proto-bot"
           git config user.email "proto-bot@users.noreply.github.com"
           git add gen/go
           git commit -m "Publish" || echo "Nothing to commit"
-          git push origin HEAD:${{ github.head_ref || github.ref_name }}
+          git push origin HEAD:"$BRANCH_NAME"
