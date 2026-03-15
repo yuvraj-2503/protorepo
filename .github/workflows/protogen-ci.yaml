@@ -87,6 +87,8 @@ jobs:
 
       - name: Check Publish Condition
         id: publishcondition
+        env:
+          GITHUB_EVENT_JSON: ${{ toJson(github.event) }}
         run: |
           SHOULD_PUBLISH=false
 
@@ -97,7 +99,7 @@ jobs:
 
           # Only publish on PR if label 'publish' (case-insensitive) is present
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            LABELS=$(jq -r '[.pull_request.labels[].name] | map(ascii_downcase) | join(",")' <<< '${{ toJson(github.event) }}')
+            LABELS=$(echo "$GITHUB_EVENT_JSON" | jq -r '[.pull_request.labels[].name] | map(ascii_downcase) | join(",")')
             if [[ ",${LABELS}," == *",publish,"* ]]; then
               SHOULD_PUBLISH=true
             fi
