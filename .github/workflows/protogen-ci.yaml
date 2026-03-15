@@ -45,7 +45,7 @@ jobs:
       - name: Detect Publish Commit
         id: publishcheck
         run: |
-          if git log -1 --pretty=%B | grep -q "Publish" ; then
+          if git log -1 --pretty=%B | grep -q "publish" ; then
             echo "is_publish=true" >> $GITHUB_OUTPUT
           else
             echo "is_publish=false" >> $GITHUB_OUTPUT
@@ -90,13 +90,15 @@ jobs:
         run: |
           SHOULD_PUBLISH=false
 
+          # Only publish on push to main
           if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
             SHOULD_PUBLISH=true
           fi
 
+          # Only publish on PR if label 'publish' (case-insensitive) is present
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            LABELS=$(jq -r '.pull_request.labels[].name' <<< '${{ toJson(github.event) }}')
-            if echo "$LABELS" | grep -q "publish"; then
+            LABELS=$(jq -r '[.pull_request.labels[].name] | map(ascii_downcase) | join(",")' <<< '${{ toJson(github.event) }}')
+            if [[ ",${LABELS}," == *",publish,"* ]]; then
               SHOULD_PUBLISH=true
             fi
           fi
